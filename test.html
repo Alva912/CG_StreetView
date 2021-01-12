@@ -1,0 +1,578 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta http-equiv="X-UA-Compatible" content="ie=edge" />
+  <title>test</title>
+  <style>
+    body {
+      margin: 0;
+      font-family: Monospace;
+      background-color: #000;
+      color: #fff;
+      margin: 0px;
+      overflow: hidden;
+    }
+
+    #info {
+      position: absolute;
+      top: 10px;
+      width: 100%;
+      text-align: center;
+    }
+
+    canvas {
+      width: 100%;
+      height: 100%;
+    }
+  </style>
+</head>
+
+<body>
+  <canvas id="c">
+    <p>this is the group 10 demo</p>
+  </canvas>
+  <script type="module">
+
+    import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.115.0/build/three.module.min.js';
+    import { OrbitControls } from 'https://cdn.jsdelivr.net/npm/three@0.115.0/examples/jsm/controls/OrbitControls.min.js';
+    import { GUI } from 'https://cdn.jsdelivr.net/npm/three@0.115.0/examples/jsm/libs/dat.gui.module.min.js';
+    // import { PLYLoader } from 'https://cdn.jsdelivr.net/npm/three@0.115.0/examples/jsm/loaders/PLYLoader.min.js';
+    import { OBJLoader } from 'https://cdn.jsdelivr.net/npm/three@0.115.0/examples/jsm/loaders/OBJLoader.min.js';
+    // import { OBJLoader2 } from 'https://cdn.jsdelivr.net/npm/three@0.115.0/examples/jsm/loaders/OBJLoader2.min.js';
+    import { MTLLoader } from 'https://threejsfundamentals.org/threejs/resources/threejs/r115/examples/jsm/loaders/MTLLoader.js';
+    // import { MtlObjBridge } from 'https://cdn.jsdelivr.net/npm/three@0.115.0/examples/jsm/loaders/obj2/bridge/MtlObjBridge.min.js';
+    import { GLTFLoader } from 'https://cdn.jsdelivr.net/npm/three@0.115.0/examples/jsm/loaders/GLTFLoader.min.js';
+
+    // ANCHOR Setup scene
+    const canvas = document.querySelector('#c');
+    const renderer = new THREE.WebGLRenderer({ canvas });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.shadowMap.enabled = true;
+
+    const ratio = window.innerWidth / window.innerHeight;
+    const camera = new THREE.PerspectiveCamera(45, ratio, 0.1, 1000);
+    camera.position.set(0, 0, 50);
+    camera.lookAt(0, 0, 1);
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0, 0, 0);
+
+    // ANCHOR Add mesh floor
+    const floorSize = 800;
+    const textureLoader = new THREE.TextureLoader();
+    const floorTexture = textureLoader.load('https://threejsfundamentals.org/threejs/resources/images/checker.png');
+    floorTexture.wrapS = floorTexture.wrapT = THREE.RepeatWrapping;
+    floorTexture.magFilter = THREE.NearestFilter;
+    floorTexture.repeat.set(floorSize / 20, floorSize / 20);
+    const floorGeo = new THREE.PlaneBufferGeometry(floorSize, floorSize);
+    const floorMat = new THREE.MeshPhongMaterial({
+      map: floorTexture,
+      side: THREE.DoubleSide,
+    });
+    const floorMesh = new THREE.Mesh(floorGeo, floorMat);
+    floorMesh.position.y -= 20;
+    floorMesh.rotation.x = Math.PI * -.5;
+    floorMesh.receiveShadow = true;
+    scene.add(floorMesh);
+
+    // ANCHOR Lighting
+    const ambient_light = new THREE.AmbientLight(new THREE.Color(1, 1, 1), 0.5);
+    scene.add(ambient_light);
+
+    // ANCHOR Controls
+    const controls = new OrbitControls(camera, canvas);
+
+    const updateLoop = function () {
+      renderer.render(scene, camera);
+      controls.update();
+      requestAnimationFrame(updateLoop);
+    }
+    requestAnimationFrame(updateLoop);
+
+    const resizeWindow = function () {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      renderer.render(scene, camera);
+    }
+    window.addEventListener('resize', resizeWindow);
+
+    class ColorGUIHelper {
+      constructor(object, prop) {
+        this.object = object;
+        this.prop = prop;
+      }
+      get value() {
+        return `#${this.object[this.prop].getHexString()}`;
+      }
+      set value(hexString) {
+        this.object[this.prop].set(hexString);
+      }
+    }
+
+    // ANCHOR functions
+    const gui = new GUI();
+    function positionGui(gui, vector3, name, onChangeFn) {
+      const folder = gui.addFolder(name);
+      folder.add(vector3, 'x', -30, 30).onChange(onChangeFn);
+      folder.add(vector3, 'y', -30, 30).onChange(onChangeFn);
+      folder.add(vector3, 'z', -30, 30).onChange(onChangeFn);
+      folder.close();
+    }
+
+    function frameArea(sizeToFitOnScreen, boxSize, boxCenter, camera) {
+      const halfSizeToFitOnScreen = sizeToFitOnScreen * 0.5;
+      const halfFovY = THREE.MathUtils.degToRad(camera.fov * .5);
+      const distance = halfSizeToFitOnScreen / Math.tan(halfFovY);
+      const direction = (new THREE.Vector3())
+        .subVectors(camera.position, boxCenter)
+        .multiply(new THREE.Vector3(1, 0, 1))
+        .normalize();
+      camera.position.copy(direction.multiplyScalar(distance).add(boxCenter));
+      camera.near = boxSize / 100;
+      camera.far = boxSize * 100;
+      camera.updateProjectionMatrix();
+      camera.lookAt(boxCenter.x, boxCenter.y, boxCenter.z);
+    }
+
+    function sizing(obj, tra, sca) {
+      obj.applyMatrix4(tra);
+      obj.applyMatrix4(sca);
+    }
+
+    function turnOnShadows(root) {
+      root.traverse((obj) => {
+        if (obj.castShadow !== undefined) {
+          obj.castShadow = true;
+          obj.receiveShadow = true;
+        }
+      });
+    }
+
+    // TODO Load models
+    const gltfLoader = new GLTFLoader();
+
+    // ANCHOR house1
+    gltfLoader.load('./japanese_house_2.0/scene.gltf', (gltf) => {
+      const root = gltf.scene;
+
+      // NOTE boxSizing
+      const box = new THREE.Box3().setFromObject(root);
+      const boxSize = box.getSize(new THREE.Vector3());
+      const boxSizeLen = boxSize.length();
+      const boxCenter = box.getCenter(new THREE.Vector3());
+      const scaFact = 100 / boxSizeLen;
+      const tra = new THREE.Matrix4();
+      const sca = new THREE.Matrix4();
+      tra.makeTranslation(-boxCenter.x, -boxCenter.y + boxSize.y * .5, -boxCenter.z);
+      sca.makeScale(scaFact, scaFact, scaFact);
+      if (root) {
+        for (const obj of root.children) {
+          sizing(obj, tra, sca);
+        }
+      }
+
+      frameArea(boxSizeLen * 1.5, boxSizeLen, boxCenter, camera);
+      controls.maxDistance = boxSizeLen * 10;
+      controls.target.copy(boxCenter);
+      controls.update();
+
+      // NOTE shadow
+      turnOnShadows(root);
+
+      // NOTE unvisible
+      const unVisible = new THREE.Group();
+      unVisible.add(root.getObjectByName('polySurface1456_lambert22_0'));
+      unVisible.add(root.getObjectByName('polySurface1007_lambert37_0'));
+
+      // NOTE ceiling
+      const pos = root.getWorldPosition(new THREE.Vector3);
+      const siz = root.getWorldScale(new THREE.Vector3);
+      const houseLight = new THREE.SpotLight(new THREE.Color(1, 0.2, 0.1), 20);
+      houseLight.position.set(pos.x, pos.y + scaFact * boxSize.y * .68, pos.z - scaFact * boxSize.z * .2);
+      houseLight.distance = 40;
+      houseLight.angle = Math.PI * .45;
+      houseLight.penumbra = 0.1;
+      houseLight.target.position.set(pos.x - 5, pos.y - scaFact * boxSize.y, pos.z + 5);
+      houseLight.castShadow = true;
+      scene.add(houseLight);
+      scene.add(houseLight.target);
+
+      // const lightHelper = new THREE.CameraHelper(houseLight.shadow.camera);
+      // scene.add(lightHelper);
+      gui.addColor(new ColorGUIHelper(houseLight, 'color'), 'value').name('house1color');
+      // gui.add(houseLight, 'intensity', 0, 30, 0.01);
+      // positionGui(gui, houseLight.position, 'pos');
+      // positionGui(gui, houseLight.target.position, 'house1tarpos');
+
+      // NOTE lamp small
+      const lampSm = new THREE.Group();
+      lampSm.add(root.getObjectByName('polySurface847_surfaceShader1_0'));
+      lampSm.add(root.getObjectByName('polySurface849_surfaceShader1_0'));
+      lampSm.add(root.getObjectByName('polySurface948_surfaceShader1_0'));
+      lampSm.add(root.getObjectByName('polySurface989_surfaceShader1_0'));
+      lampSm.add(root.getObjectByName('polySurface1035_surfaceShader1_0'));
+      lampSm.add(root.getObjectByName('polySurface1038_surfaceShader1_0'));
+      lampSm.add(root.getObjectByName('polySurface1043_surfaceShader1_0'));
+      lampSm.add(root.getObjectByName('polySurface1045_surfaceShader1_0'));
+      lampSm.add(root.getObjectByName('polySurface1130_surfaceShader1_0'));
+      lampSm.add(root.getObjectByName('polySurface1228_surfaceShader1_0'));
+      lampSm.add(root.getObjectByName('polySurface1271_surfaceShader1_0'));
+      lampSm.add(root.getObjectByName('polySurface1410_surfaceShader1_0'));
+      lampSm.add(root.getObjectByName('polySurface1551_surfaceShader1_0'));
+      lampSm.add(root.getObjectByName('polySurface1552_surfaceShader1_0'));
+      lampSm.add(root.getObjectByName('polySurface949_surfaceShader1_0'));
+      scene.add(lampSm);
+      if (lampSm) {
+        for (const lamp of lampSm.children) {
+          sizing(lamp, tra, sca);
+          lamp.castShadow = true;
+          lamp.receiveShadow = true;
+          const geo = lamp.geometry;
+          geo.computeBoundingBox();
+          const lampCenter = geo.boundingBox.getCenter(new THREE.Vector3());
+
+          const lampLight = new THREE.PointLight(new THREE.Color(0.3, 0.2, 0.1), 0.2);
+          lampLight.position.set(lampCenter.x, lampCenter.y, lampCenter.z);
+          sizing(lampLight, tra, sca);
+          scene.add(lampLight);
+
+          // const lampHelper = new THREE.PointLightHelper(lampLight);
+          // scene.add(lampHelper);
+        }
+      }
+
+      // NOTE lamp large
+      const lampLg = new THREE.Group();
+      lampLg.add(root.getObjectByName('polySurface1447_surfaceShader1_0'));
+      lampLg.add(root.getObjectByName('polySurface1572_surfaceShader1_0'));
+      scene.add(lampLg);
+      if (lampLg) {
+        for (const lamp of lampLg.children) {
+          sizing(lamp, tra, sca);
+          lamp.castShadow = true;
+          lamp.receiveShadow = true;
+          const geo = lamp.geometry;
+          geo.computeBoundingBox();
+          const lampCenter = geo.boundingBox.getCenter(new THREE.Vector3());
+          const lampSize = geo.boundingBox.getSize(new THREE.Vector3());
+
+          const lampLight = new THREE.SpotLight(new THREE.Color(1, 0.9, 0), 5);
+          lampLight.position.set(lampCenter.x, lampCenter.y - lampSize.y * .5, lampCenter.z + .25);
+          lampLight.distance = 40;
+          lampLight.angle = Math.PI * .25;
+          lampLight.penumbra = 0.05;
+          lampLight.target.position.set(lampCenter.x, lampCenter.y - lampSize.y * 50, lampCenter.z + 1);
+          sizing(lampLight, tra, sca);
+          sizing(lampLight.target, tra, sca);
+          lampLight.castShadow = true;
+          scene.add(lampLight);
+          scene.add(lampLight.target);
+
+          // const lampHelper = new THREE.CameraHelper(lampLight.shadow.camera);
+          // scene.add(lampHelper);
+          gui.addColor(new ColorGUIHelper(lampLight, 'color'), 'value').name(lamp.name);
+          // gui.add(lampLight, 'intensity', 0, 20, 0.01);
+          // positionGui(gui, lampLight.target.position, lamp.name);
+        }
+      }
+
+      scene.add(root);
+
+    });
+
+    // ANCHOR house2
+    gltfLoader.load('./kyoto_cityscene_restaurant/scene.gltf', (gltf) => {
+      const root = gltf.scene;
+
+      // NOTE boxSizing
+      const box = new THREE.Box3().setFromObject(root);
+      const boxSize = box.getSize(new THREE.Vector3());
+      const boxSizeLen = boxSize.length();
+      const boxCenter = box.getCenter(new THREE.Vector3());
+      const scaFact = 40 / boxSizeLen;
+      const tra = new THREE.Matrix4();
+      const sca = new THREE.Matrix4();
+      tra.makeTranslation(-boxCenter.x, -boxCenter.y + boxSize.y * .5, -boxCenter.z);
+      sca.makeScale(scaFact, scaFact, scaFact);
+      if (root) {
+        for (const obj of root.children) {
+          sizing(obj, tra, sca);
+        }
+      }
+      root.position.x += 40;
+
+      // NOTE shadows
+      turnOnShadows(root);
+
+      // NOTE unvisible
+      const unVisible = new THREE.Group();
+      unVisible.add(root.getObjectByName('Plane001__0'));
+      unVisible.add(root.getObjectByName('folds_Material_#0_0'));
+      unVisible.add(root.getObjectByName('folds003_Material_#0_0'));
+      unVisible.add(root.getObjectByName('folds004_Material_#0_0'));
+
+      // NOTE ceilings
+      const houseLight = new THREE.SpotLight(new THREE.Color(0, 0.5, 1), 10);
+      const pos = root.getWorldPosition(new THREE.Vector3);
+      const siz = root.getWorldScale(new THREE.Vector3);
+      houseLight.position.set(pos.x, pos.y + scaFact * boxSize.y * .9, pos.z);
+      houseLight.distance = 40;
+      houseLight.angle = Math.PI * .45;
+      houseLight.penumbra = 0.1;
+      houseLight.target.position.set(pos.x, pos.y - scaFact * boxSize.y, pos.z + 5);
+      houseLight.castShadow = true;
+      scene.add(houseLight);
+      scene.add(houseLight.target);
+
+      // const lightHelper = new THREE.CameraHelper(houseLight.shadow.camera);
+      // scene.add(lightHelper);
+      gui.addColor(new ColorGUIHelper(houseLight, 'color'), 'value').name('house2color');
+      // gui.add(houseLight, 'intensity', 0, 20, 0.01);
+      // positionGui(gui, houseLight.position, 'pos');
+      // positionGui(gui, houseLight.target.position, 'house2tarpos');
+
+      scene.add(root);
+
+    });
+
+    // ANCHOR house3
+    gltfLoader.load('./old_brick_building/scene.gltf', (gltf) => {
+      const root = gltf.scene;
+
+      // NOTE boxSizing
+      const box = new THREE.Box3().setFromObject(root);
+      const boxSize = box.getSize(new THREE.Vector3());
+      const boxSizeLen = boxSize.length();
+      const boxCenter = box.getCenter(new THREE.Vector3());
+      const scaFact = 70 / boxSizeLen;
+      const tra = new THREE.Matrix4();
+      const sca = new THREE.Matrix4();
+      tra.makeTranslation(-boxCenter.x, -boxCenter.y + boxSize.y * .5, -boxCenter.z);
+      sca.makeScale(scaFact, scaFact, scaFact);
+      if (root) {
+        for (const obj of root.children) {
+          sizing(obj, tra, sca);
+        }
+      }
+      root.position.x -= 40;
+      // root.rotation.y = Math.PI / 2;
+
+      // NOTE shadows
+      turnOnShadows(root);
+
+      // NOTE unvisible
+      const unVisible = new THREE.Group();
+      unVisible.add(root.getObjectByName('mesh_6'));
+
+      const mat = root.getObjectByName('mesh_22').material;
+      mat.transparent = true;
+      mat.opacity = 0.4;
+
+      // NOTE ceilings
+      const houseLight = new THREE.SpotLight(new THREE.Color(0.5, 0.2, 1), 10);
+      const pos = root.getWorldPosition(new THREE.Vector3);
+      const siz = root.getWorldScale(new THREE.Vector3);
+      houseLight.position.set(pos.x, pos.y + scaFact * boxSize.y * .8, pos.z);
+      houseLight.distance = 40;
+      houseLight.angle = Math.PI * .45;
+      houseLight.penumbra = 0.1;
+      houseLight.target.position.set(pos.x, pos.y - scaFact * boxSize.y, pos.z + 5);
+      houseLight.castShadow = true;
+      scene.add(houseLight);
+      scene.add(houseLight.target);
+
+      // const lightHelper = new THREE.CameraHelper(houseLight.shadow.camera);
+      // scene.add(lightHelper);
+      gui.addColor(new ColorGUIHelper(houseLight, 'color'), 'value').name('house3color');
+      // gui.add(houseLight, 'intensity', 0, 20, 0.01);
+      // positionGui(gui, houseLight.position, 'pos');
+      // positionGui(gui, houseLight.target.position, 'house3tarpos');
+
+      scene.add(root);
+
+    });
+
+    // ANCHOR house4
+    gltfLoader.load('./building_game-ready/scene.gltf', (gltf) => {
+      const root = gltf.scene;
+
+      // NOTE boxSizing
+      const box = new THREE.Box3().setFromObject(root);
+      const boxSize = box.getSize(new THREE.Vector3());
+      const boxSizeLen = boxSize.length();
+      const boxCenter = box.getCenter(new THREE.Vector3());
+      const scaFact = 30 / boxSizeLen;
+      const tra = new THREE.Matrix4();
+      const sca = new THREE.Matrix4();
+      tra.makeTranslation(-boxCenter.x, -boxCenter.y + boxSize.y * .5, -boxCenter.z);
+      sca.makeScale(scaFact, scaFact, scaFact);
+      if (root) {
+        for (const obj of root.children) {
+          sizing(obj, tra, sca);
+        }
+      }
+      root.position.x -= 70;
+
+      // NOTE shadows
+      turnOnShadows(root);
+
+      // NOTE unvisible
+      const unVisible = new THREE.Group();
+
+      var transparentObj = [];
+      transparentObj.push(root.getObjectByName('Object001_black_0'));
+      transparentObj.push(root.getObjectByName('Object002_black_0'));
+      // transparentObj.push(root.getObjectByName('Plane026_walls_0'));
+      // transparentObj.push(root.getObjectByName('Plane027_walls_0'));
+      // transparentObj.push(root.getObjectByName('Plane028_walls_0'));
+      // transparentObj.push(root.getObjectByName('Plane097_walls_0'));
+      for (var transpar of transparentObj) {
+        var mat = transpar.material;
+        mat.transparent = true;
+        mat.opacity = 0.4;
+      }
+
+      // NOTE ceilings
+      const houseLight = new THREE.SpotLight(new THREE.Color(0.5, 1, 0.2), 5);
+      const pos = root.getWorldPosition(new THREE.Vector3);
+      const siz = root.getWorldScale(new THREE.Vector3);
+      houseLight.position.set(pos.x, pos.y + scaFact * boxSize.y * .9, pos.z);
+      houseLight.distance = 80;
+      houseLight.angle = Math.PI * .45;
+      houseLight.penumbra = 0.1;
+      houseLight.target.position.set(pos.x, pos.y - scaFact * boxSize.y, pos.z + 5);
+      houseLight.castShadow = true;
+      scene.add(houseLight);
+      scene.add(houseLight.target);
+
+      // const lightHelper = new THREE.CameraHelper(houseLight.shadow.camera);
+      // scene.add(lightHelper);
+      gui.addColor(new ColorGUIHelper(houseLight, 'color'), 'value').name('house4color');
+      // gui.add(houseLight, 'intensity', 0, 20, 0.01);
+      // positionGui(gui, houseLight.position, 'pos');
+      // positionGui(gui, houseLight.target.position, 'house3tarpos');
+
+      scene.add(root);
+
+    });
+
+    // ANCHOR tree
+    var rollOverGeo = new THREE.BoxBufferGeometry(15, 15, 15);
+    var rollOverMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(0, 0.5, 0), opacity: 0.5, transparent: true });
+    var rollOverMesh = new THREE.Mesh(rollOverGeo, rollOverMat);
+    scene.add(rollOverMesh);
+
+    var gridHelper = new THREE.GridHelper(60, 4);
+    gridHelper.position.z += 60;
+    scene.add(gridHelper);
+
+    var normal_map = textureLoader.load('./seamless_green_grass_rough_NORMAL.jpg');
+    normal_map.wrapS = normal_map.wrapT = THREE.RepeatWrapping;
+    normal_map.repeat = new THREE.Vector2(4, 4);
+    var treeAreaGeo = new THREE.BoxGeometry(60, 0.5, 60);
+    var grassTexture = textureLoader.load('./seamless_green_grass_rough_DIFFUSE.jpg');
+    grassTexture.wrapS = grassTexture.wrapT = THREE.RepeatWrapping;
+    grassTexture.magFilter = THREE.NearestFilter;
+    grassTexture.repeat.set(4, 4);
+    var treeAreaMat = new THREE.MeshPhongMaterial({
+      color: new THREE.Color(0.3, 0.8, 0.2),
+      shininess: 10,
+      side: THREE.DoubleSide,
+      normalMap: normal_map,
+      map: grassTexture,
+    });
+    var treeAreaMesh = new THREE.Mesh(treeAreaGeo, treeAreaMat);
+    treeAreaMesh.position.z += 60;
+    scene.add(treeAreaMesh);
+
+    var objects = [];
+    objects.push(treeAreaMesh);
+
+    document.addEventListener('mousemove', onDocumentMouseMove, false);
+    document.addEventListener('mousedown', onDocumentMouseDown, false);
+    document.addEventListener('keydown', onDocumentKeyDown, false);
+    document.addEventListener('keyup', onDocumentKeyUp, false);
+
+    var raycaster = new THREE.Raycaster();
+    var mouse = new THREE.Vector2();
+    var isShiftDown = false;
+    var loadedObj = 0;
+
+    function onDocumentMouseMove(event) {
+      event.preventDefault();
+      mouse.set((event.clientX / window.innerWidth) * 2 - 1, - (event.clientY / window.innerHeight) * 2 + 1);
+      raycaster.setFromCamera(mouse, camera);
+      var intersects = raycaster.intersectObjects(objects);
+      if (intersects.length > 0) {
+        var intersect = intersects[0];
+        rollOverMesh.position.copy(intersect.point).add(intersect.face.normal);
+        rollOverMesh.position.divideScalar(15).floor().multiplyScalar(15).addScalar(7.5);
+      }
+      renderer.render(scene, camera);
+    }
+
+    const mtlLoader = new MTLLoader();
+    const objLoader = new OBJLoader();
+
+    function onDocumentMouseDown(event) {
+      event.preventDefault();
+      mouse.set((event.clientX / window.innerWidth) * 2 - 1, - (event.clientY / window.innerHeight) * 2 + 1);
+      raycaster.setFromCamera(mouse, camera);
+      var intersects = raycaster.intersectObjects(objects);
+      if (intersects.length > 0) {
+        var intersect = intersects[0];
+        // delete tree
+        if (isShiftDown) {
+          if (intersect.object !== treeAreaMesh) {
+            scene.remove(intersect.object);
+            objects.splice(objects.indexOf(intersect.object), 1);
+            loadedObj -= 1;
+          }
+        }
+        else {
+          // create tree
+          if (loadedObj < 10) {
+            mtlLoader.load('./Model_D0902B40/tree.mtl', function (materials) {
+              console.log(materials);
+              objLoader.setMaterials(materials);
+              objLoader.load('./Model_D0902B40/tree.obj', function (tree) {
+                for (var k of tree.children) {
+                  k.castShadow = true;
+                  k.receiveShadow = true;
+                  k.scale.set(4, 4, 4);
+                  k.geometry.center();
+                  k.name = "Loaded_mesh";
+                };
+                tree.position.copy(intersect.point).add(intersect.face.normal);
+                tree.position.divideScalar(15).floor().multiplyScalar(15).addScalar(7.5);
+                scene.add(tree);
+                objects.push(tree);
+              });
+            });
+            loadedObj += 1;
+          }
+        }
+        renderer.render(scene, camera);
+      }
+    }
+
+    function onDocumentKeyDown(event) {
+      switch (event.keyCode) {
+        case 16: isShiftDown = true; break;
+      }
+    }
+
+    function onDocumentKeyUp(event) {
+      switch (event.keyCode) {
+        case 16: isShiftDown = false; break;
+      }
+    }
+
+  </script>
+</body>
+
+</html>
